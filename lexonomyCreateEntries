@@ -1,0 +1,81 @@
+#!/usr/bin/python
+
+import urllib, urllib2, base64, json, sys
+
+email, apikey, dictid = sys.argv[1:]
+
+url = "https://www.lexonomy.eu/push.api"
+
+entries = []
+lemmas = []
+
+def sense2xml(s, entry):
+    xml = '<sense>'
+    if "defs" in s:
+        for d in s["defs"]:
+            xml += '<definition>%s</definition>' % d
+    if "examples" in s:
+        for xampl in s["examples"]:
+            xml += '<exampleContainer><example>' + xampl
+            xml += '</example></exampleContainer>'
+    wsstrip = entry.get("colls_wsstrip", 0)
+    if "colls" in s:
+        for c in s["colls"]:
+            if wsstrip:
+                coll, pos = c[:-wsstrip], c[-wsstrip:]
+            else:
+                coll, pos = c, ""
+            xml += '<collocation><collocate>' + coll + '</collocate>'
+            xml += '<collocatePartOfSpeech>' + pos + '</collocatePartOfSpeech>'
+            xml += '</collocation>'
+    if "thes" in entry:
+        xml += '<thesaurusItems>'
+        for w in entry["thes"]:
+            xml += '<thesaurusItem>' + w + '</thesaurusItem>'
+        xml += '</thesaurusItems>'
+    xml += '</sense>'
+    return xml
+
+for line in sys.stdin:
+    entry = json.loads(line)
+    lemma = entry["hw"]
+    if ' ' in lemma: headword, pos = lemma, 'n'
+    else:
+        try:
+            headword, pos = lemma.rsplit('-', 1)
+        except ValueError:
+            headword, pos = lemma, ""
+    xml = '<entry><headwordContainer><headword>' + headword
+    xml += '</headword><partOfSpeech>' + pos + '</partOfSpeech>'
+    xml += '</headwordContainer>'
+    if "senses" in entry:
+        for s in entry["senses"]:
+            xml += sense2xml(s, entry)
+    else:
+        xml += sense2xml(entry, entry)
+    xml += '</entry>'
+    entries.append(xml)
+    lemmas.append(lemma)
+
+sys.stderr.write('pushing entries into Lexonomy ...\n')
+for lemma, entry in zip(lemmas, entries):
+    req = { "email": email,
+            "apikey": apikey,
+            "command": "createEntries",
+            "dictID": dictid,
+            "entryXmls": [entry],
+          }
+
+    request = urllib2.Request(url, json.dumps(req), {'Content-Type': 'application/json'})
+    file = urllib2.urlopen(request)
+    data = file.read()
+    file.close()
+    try:
+        data = json.loads(data)
+    except:
+        print >> sys.stderr, "Failed to read response from Lexonomy, request was:\n" + json.dumps(req)
+        print >> sys.stderr, "Response was:\n" + repr(data)
+        print >> sys.stderr, "Traceback follows:"
+        raise
+    print data
+

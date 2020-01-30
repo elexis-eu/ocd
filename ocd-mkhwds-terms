@@ -1,0 +1,57 @@
+#!/usr/bin/python
+
+import urllib, urllib2, json, sys
+
+base_url = 'https://api.sketchengine.co.uk/corpus/'
+method = 'wordlist'
+
+corp = sys.argv[1]
+refcorp = sys.argv[2]
+size = int(sys.argv[3])
+usr = sys.argv[4]
+apikey = sys.argv[5]
+
+
+attrs1 = dict(corpname=corp, format='json', api_key=apikey,
+              wlattr='ws_terms', wltype='keywords', ref_corpname=refcorp)
+attrs2 = dict(corpname=corp, format='json', api_key=apikey,
+              wlattr='lempos', wltype='keywords', ref_corpname=refcorp,
+              wlpat='\w*-[nvja]')
+
+encoded_attrs1 = urllib.quote(json.dumps(attrs1))
+encoded_attrs2 = urllib.quote(json.dumps(attrs2))
+url1 = base_url + method + '?username=%s;json=%s' % (usr, encoded_attrs1)
+url2 = base_url + method + '?username=%s;json=%s' % (usr, encoded_attrs2)
+request1 = urllib2.Request(url1)
+request2 = urllib2.Request(url2)
+file1 = urllib2.urlopen(request1)
+file2 = urllib2.urlopen(request2)
+data1 = file1.read()
+data2 = file2.read()
+file1.close()
+file2.close()
+data1 = json.loads(data1)
+data2 = json.loads(data2)
+
+result = []
+for item in data1['Keywords'][:(size/2)]:
+    q = ''
+    term = item['str'].split()[2].split('_')
+    for w in term:
+        q += '[lc=="%s"|lemma_lc=="%s"]' % (w, w)
+    result.append((' '.join(term), q))
+
+if 'Keywords' in data2:
+    for item in data2['Keywords'][:(size-size/2)]:
+        result.append((item['str'], '[lempos=="%s"]' % item['str']))
+else:
+    for item in data1['Keywords'][(size/2):size]:
+        q = ''
+        term = item['str'].split()[2].split('_')
+        for w in term:
+            q += '[lc=="%s"|lemma_lc=="%s"]' % (w, w)
+        result.append((' '.join(term), q))
+
+for term, query in result:
+    entry = {"hw": term.encode('utf8'), "conclink": query.encode('utf8')}
+    print json.dumps(entry)

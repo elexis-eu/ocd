@@ -1,0 +1,36 @@
+#!/usr/bin/python
+
+import sys, manatee, json
+
+corp, attr, regexp, filterre, minfreq, topn = sys.argv[1:]
+minfreq = int(minfreq)
+topn = int(topn)
+
+try:
+    c = manatee.Corpus(corp)
+except manatee.CorpInfoNotFound:
+    c = manatee.Corpus(corp.split("/")[-1])
+if filterre:
+    filterre = c.get_conf("NONWORDRE")
+if not regexp:
+    regexp = ".*"
+a = c.get_attr (attr)
+it = a.regexp2ids (regexp, False, filterre)
+if topn:
+    items = []
+    while not it.end():
+        i = it.next()
+        if a.freq(i) >= minfreq:
+            items.append((a.freq(i), i))
+    items = sorted(items,reverse=True)[:topn]
+    for x in items:
+        s = a.id2str(x[1])
+        entry = {"hw": s, "conclink": '[%s="%s"]' % (attr, s)}
+        print json.dumps(entry)
+else:
+    while not it.end():
+        i = it.next()
+        if a.freq(i) >= minfreq:
+            s = a.id2str(i)
+            entry = {"hw": s, "conclink": '[%s="%s"]' % (attr, s)}
+            print json.dumps(entry)

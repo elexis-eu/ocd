@@ -1,0 +1,36 @@
+#!/usr/bin/python
+
+import urllib, urllib2, json, sys
+
+base_url = 'https://api.sketchengine.co.uk/corpus/'
+method = 'thes'
+
+corp = sys.argv[1]
+usr = sys.argv[2]
+apikey = sys.argv[3]
+
+
+for ll in sys.stdin:
+    entry = json.loads(ll)
+    if ' ' in entry["hw"]:
+        sys.stdout.write(ll)
+        continue
+    try:
+        lemma, lpos = entry["hw"].rsplit('-', 1)
+        lpos = '-' + lpos
+    except ValueError:
+        lemma = entry["hw"]
+        lpos = ""
+    attrs = dict(corpname=corp, format='json', api_key=apikey, lemma=lemma, 
+                 lpos=lpos)
+    encoded_attrs = urllib.quote(json.dumps(attrs))
+    url = base_url + method + '?username=%s;json=%s' % (usr, encoded_attrs)
+    #retieve data
+    request = urllib2.Request(url)
+    file = urllib2.urlopen(request)
+    data = file.read()
+    file.close()
+    data = json.loads(data)
+    if 'error' not in data:
+        entry["thes"] = [x['word'] for x in data['Words'][:10]]
+    print json.dumps(entry)

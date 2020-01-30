@@ -1,0 +1,95 @@
+#!/usr/bin/python
+
+import urllib, urllib2, base64, json, sys, manatee
+
+base_url = 'https://api.sketchengine.co.uk/corpus/'
+method = 'wsketch'
+
+corp = sys.argv[1]
+wsstrip = int(sys.argv[2])
+usr = sys.argv[3]
+apikey = sys.argv[4]
+
+
+attrs = dict(corpname=corp, format='json', clustercolls='1', api_key=apikey,
+             minsim=0.05)
+
+def unimap (relname, grfile):
+    lastgr = None
+    for line in grfile:
+        if line.startswith("="):
+            lastgr = line[1:-1].split("/")
+            continue
+        elif not line.startswith("*UNIMAP"):
+            continue
+        else:
+            line = line.replace("*UNIMAP","").strip().split("/")
+            try:
+                i = line.index(relname)
+            except ValueError:
+                continue
+            return lastgr[i]
+
+gramrels = {"-n": 'modifier', "-v": 'object_of', "-j": 'n_modifies'}
+try:
+    c = manatee.Corpus(corp)
+except manatee.CorpInfoNotFound:
+    c = manatee.Corpus(corp.split("/")[-1])
+grfile = open(c.get_conf("WSDEF"))
+for g in gramrels:
+    gramrels[g] = unimap(gramrels[g], grfile)
+
+for h in sys.stdin:
+    entry = json.loads(h)
+    attrs['lemma'] = entry["hw"]
+    lempos = attrs['lemma']
+    if ' ' in lempos:
+        print json.dumps(entry)
+        continue
+    if wsstrip:
+        attrs['lpos'] = attrs['lemma'][-wsstrip:]
+        attrs['lemma'] = attrs['lemma'][:-wsstrip]
+        attrs['selgrlist'] = gramrels.get(attrs['lpos'], "")
+
+    encoded_attrs = urllib.quote(json.dumps(attrs))
+    url = base_url + method + '?username=%s;json=%s' % (usr, encoded_attrs)
+
+    request = urllib2.Request(url)
+
+    file = urllib2.urlopen(request)
+    data = file.read()
+    file.close()
+
+    data = json.loads(data)
+    clusters = []
+    if not "Gramrels" in data:
+        print json.dumps(entry)
+        continue
+    for g in data["Gramrels"]:
+        for w in g["Words"]:
+            if not "lempos" in w:
+                continue
+            cluster = [{"lempos": w["lempos"], "conclink": w["conclink"], "relconclink": '[ws("%s","%s","%s")]' % (lempos, g["name"].replace('"',r'\"'), w["lempos"])}]
+            for c in w.get("Clust",[]):
+                cluster.append({"lempos": c["lempos"], "conclink": c["conclink"], "relconclink": '[ws("%s","%s","%s")]' % (lempos, g["name"].replace('"',r'\"'), c["lempos"])})
+            clusters.append (cluster)
+#    changed = True
+#    while changed:
+#        changed = False
+#        for cindex in xrange(len(clusters)):
+#            for i in xrange(cindex + 1, len(clusters)):
+#                if (set([x["lempos"] for x in clusters[cindex]]) & set([x["lempos"] for x in clusters[i]])):
+#                    clusters[cindex].extend(clusters[i])
+#                    changed = True
+#                    break
+#            if changed:
+#                del clusters[cindex]
+#                break
+    senses = []
+    for c in clusters:
+        senses.append({"relconclink" : "|".join ([x["relconclink"].encode('utf8') for x in c]),
+                       "conclink": "|".join ([x["conclink"].encode('utf8') for x in c]),
+                       "colls": [x["lempos"].encode('utf8') for x in c]})
+    entry["senses"] = senses
+    entry["colls_wsstrip"] = 2
+    print json.dumps(entry)

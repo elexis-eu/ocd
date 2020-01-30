@@ -1,0 +1,87 @@
+#!/bin/bash
+
+CORPUS=$1 # MUST BE FIRST ARGUMENT, CRYSTAL RELIES ON IT
+OCDCONF=$2
+SKE_USER=$3
+SKE_APIKEY=$4
+if [ $# -eq "7" ]; then # details for Lexonomy
+	LEX_EMAIL=$3
+	LEX_APIKEY=$4
+	DICTID=$5 # MUST BE LAST ARGUMENT, CRYSTAL RELIES ON IT
+fi
+
+source $OCDCONF
+umask 002
+TMPDIR=${OCDCONF}.d
+mkdir $TMPDIR
+chmod g+ws $TMPDIR
+WSSTRIP=0
+
+if [[ $CORPUS = user/* ]]; then
+	IFS='/' read -ra CORPPATH <<< "$CORPUS"
+	USER=${CORPPATH[1]}
+    export MANATEE_REGISTRY="/user_data/$USER/registry:$MANATEE_REGISTRY"
+fi
+
+>&2 echo "3%"
+echo "=== GENERATING HEADWORDS ==="
+if [ $SOURCETYPE == "kw" ]; then
+	ocd-mkhwds-terms "$CORPUS" "$TERMREFCORPUS" "$SIZE" "$SKE_USER" "$SKE_APIKEY" > $TMPDIR/hwds
+	WSSTRIP=2
+else
+	ocd-mkhwds-plain "$CORPUS" "$ATTR" "$FILTERRE" "$NONWORDRE" "$MINFREQ" "$SIZE" > $TMPDIR/hwds
+	if [[ $ATTR == lempos* ]]; then
+		WSSTRIP=2
+	fi
+fi
+>&2 echo "11%"
+echo "=== DONE ==="
+
+echo "=== CLUSTERING WORD SENSES ==="
+if [ $DISABLE_WSI == "1" ]; then
+	if [ $DISABLE_COLL == "1" ]; then
+		echo "disabled"
+                cp $TMPDIR/hwds $TMPDIR/wsi
+	else
+		ocd-mkcoll "$CORPUS" "$ATTR" "$NONWORDRE" "$SKE_USER" "$SKE_APIKEY" < $TMPDIR/hwds > $TMPDIR/wsi
+		echo "only plain collocations"
+	fi
+else
+	ocd-mkwsi $CORPUS $WSSTRIP "$SKE_USER" "$SKE_APIKEY" < $TMPDIR/hwds > $TMPDIR/wsi
+fi
+>&2 echo "21%"
+echo "=== DONE ==="
+
+echo "=== FINDING EXAMPLES ==="
+if [ $DISABLE_GDEX == "1" ]; then
+	echo "disabled"
+        cp $TMPDIR/wsi $TMPDIR/gdex
+else
+	ocd-mkgdex $CORPUS "$SKE_USER" "$SKE_APIKEY" < $TMPDIR/wsi > $TMPDIR/gdex
+fi
+>&2 echo "41%"
+echo "=== DONE ==="
+
+echo "=== FINDING DEFINITIONS ==="
+if [ $DISABLE_GDEF == "1" ]; then
+	echo "disabled"
+        cp $TMPDIR/gdex $TMPDIR/defs
+else
+	ocd-mkdefs enwiki,$CORPUS,ententen13_tt2_1 "$WSSTRIP" "$SKE_USER" "$SKE_APIKEY" < $TMPDIR/gdex > $TMPDIR/defs
+fi
+>&2 echo "81%"
+echo "=== DONE ==="
+
+echo "=== OBTAINING SIMILAR WORDS ==="
+if [ $DISABLE_THES == "1" ]; then
+	echo "disabled"
+        cp $TMPDIR/defs $TMPDIR/thes
+else
+	ocd-mkthes "$REFCORPUS" "$SKE_USER" "$SKE_APIKEY" < $TMPDIR/defs > $TMPDIR/thes
+fi
+>&2 echo "96%"
+echo "=== DONE ==="
+
+if [ $# -eq "7" ]; then
+	lexonomyCreateEntries $LEX_EMAIL $LEX_APIKEY $DICTID < $TMPDIR/thes
+fi

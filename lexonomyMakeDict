@@ -1,0 +1,35 @@
+#!/usr/bin/python
+
+import urllib, urllib2, base64, json, sys
+
+url = "https://www.lexonomy.eu/push.api"
+
+email, apikey, name = sys.argv[1:4]
+if len(sys.argv) > 4: poses = sys.argv[4].split(',')
+else: poses = []
+if len(sys.argv) > 5: labels = sys.argv[5].split(',')
+else: labels = []
+if len(sys.argv) > 6: desc = open(sys.argv[6]).read()
+else: desc = ""
+
+req = \
+{
+  "email": email,
+  "apikey": apikey,
+  "command": "makeDict",
+  "dictTitle": name,
+  "dictBlurb": desc,
+  "poses": poses,
+  "labels": labels
+}
+
+request = urllib2.Request(url, json.dumps(req), {'Content-Type': 'application/json'})
+file = urllib2.urlopen(request)
+data = file.read()
+file.close()
+data = json.loads(data)
+success = data.get('success', False)
+if success:
+    print data["dictID"]
+else:
+    print -1

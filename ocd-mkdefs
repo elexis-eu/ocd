@@ -1,0 +1,52 @@
+#!/usr/bin/python
+
+import urllib, urllib2, json, sys
+
+base_url = 'https://api.sketchengine.co.uk/corpus/'
+method = 'view'
+
+corpora = sys.argv[1].split(',')
+wsstrip = int(sys.argv[2])
+usr = sys.argv[3]
+apikey = sys.argv[4]
+
+def build_lempos(s):
+    s = s.split(" ")
+    s = map(lambda x: x + wsstrip * '.', s)
+    return "|".join (s)
+
+def get_definitions(w, q):
+    defs = []
+    for corp in corpora:
+        attrs = dict(corpname=corp, format='json', api_key=apikey, structs='g',
+                     change_gdex=False, viewmode='sen',
+                     q=['q'+q, 'p 0 0>0 1 [ws("%s", "definitions", ".*")]' % build_lempos(w),
+                        ])
+        encoded_attrs = urllib.quote(json.dumps(attrs))
+        url = base_url + method + '?username=%s;json=%s' % (usr, encoded_attrs)
+        request = urllib2.Request(url)
+        file = urllib2.urlopen(request)
+        data = file.read()
+        file.close()
+        data = json.loads(data)
+
+        if 'error' in data and data['error'] == u'Empty result':
+            continue
+        for line in data['Lines']:
+            d = ''
+            d += ''.join([x['str'] for x in line['Left']])
+            d += ''.join([x['str'] for x in line['Kwic']])
+            d += ''.join([x['str'] for x in line['Right']])
+            defs.append(d)
+        if len(defs) > 9:
+            break
+    return defs
+
+for ll in sys.stdin:
+    entry = json.loads(ll)
+    if "senses" in entry:
+        for s in entry["senses"]:
+            s["defs"] = get_definitions(entry["hw"], s["relconclink"])
+    else:
+        entry["defs"] = get_definitions(entry["hw"], entry["conclink"])
+    print json.dumps(entry)

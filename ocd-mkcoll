@@ -1,0 +1,48 @@
+#!/usr/bin/python
+
+import urllib, urllib2, base64, json, sys
+
+base_url = 'https://api.sketchengine.co.uk/corpus/'
+method = 'collx'
+
+corp = sys.argv[1]
+attr = sys.argv[2]
+nonwordre = sys.argv[3]
+usr = sys.argv[4]
+apikey = sys.argv[5]
+
+if nonwordre == "1":
+    import re
+    nonwordre = re.compile("[^\W\d].*", re.UNICODE)
+else:
+    nonwordre = None
+
+attrs = dict(corpname=corp, format='json', api_key=apikey, cattr=attr, cfromw=-5,
+             ctow=5, cminfreq=5, cminbgr=3, cmaxitems=10, cbgrfns='d', csortfn='d')
+
+for h in sys.stdin:
+    entry = json.loads(h)
+    lemma = entry["hw"]
+    q = entry["conclink"]
+    attrs['q'] = "q" + q
+
+    encoded_attrs = urllib.quote(json.dumps(attrs))
+    url = base_url + method + '?username=%s;json=%s' % (usr, encoded_attrs)
+
+    request = urllib2.Request(url)
+
+    file = urllib2.urlopen(request)
+    data = file.read()
+    file.close()
+
+    data = json.loads(data)
+    clusters = []
+    if not "Items" in data:
+        continue
+    colls = [g["str"] for g in data["Items"] if (not nonwordre or nonwordre.match (g["str"]))]
+    entry["colls"] = [x.encode('utf8') for x in colls]
+    if attr in ["lempos_lc", "lempos"]:
+        entry["colls_wsstrip"] = 2
+    else:
+        entry["colls_wsstrip"] = 0
+    print json.dumps(entry)
